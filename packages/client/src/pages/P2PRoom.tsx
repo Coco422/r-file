@@ -17,6 +17,10 @@ export default function P2PRoom() {
   const [error, setError] = useState('');
   const [isHost, setIsHost] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const remotePeerIdRef = useRef('');
+
+  // WebSocket hook
+  const ws = useWebSocket();
 
   // WebRTC hooks
   const webrtc = useWebRTC({
@@ -26,16 +30,17 @@ export default function P2PRoom() {
     onDataChannelClose: () => {
       setRoomState('waiting');
       setRemotePeerId('');
+      remotePeerIdRef.current = '';
     },
     onDataChannelMessage: (data) => {
       fileTransfer.handleMessage(data);
     },
     onIceCandidate: (candidate) => {
-      if (remotePeerId) {
+      if (remotePeerIdRef.current) {
         ws.send({
           type: 'ice-candidate',
           candidate: candidate.toJSON(),
-          targetId: remotePeerId,
+          targetId: remotePeerIdRef.current,
         });
       }
     },
@@ -50,6 +55,7 @@ export default function P2PRoom() {
   // WebSocket message handler
   const handleServerMessage = useCallback(
     async (message: ServerMessage) => {
+      console.log('[P2PRoom] Handling message:', message);
       switch (message.type) {
         case 'room-created':
           setRoomCode(message.roomCode);
@@ -62,6 +68,7 @@ export default function P2PRoom() {
           setRoomCode(message.roomCode);
           setPeerId(message.peerId);
           setRemotePeerId(message.hostId);
+          remotePeerIdRef.current = message.hostId;
           setRoomState('connecting');
           setIsHost(false);
           // 访客创建 offer
@@ -71,11 +78,13 @@ export default function P2PRoom() {
 
         case 'peer-joined':
           setRemotePeerId(message.peerId);
+          remotePeerIdRef.current = message.peerId;
           setRoomState('connecting');
           break;
 
         case 'peer-left':
           setRemotePeerId('');
+          remotePeerIdRef.current = '';
           webrtc.close();
           setRoomState('waiting');
           break;
@@ -83,6 +92,7 @@ export default function P2PRoom() {
         case 'offer':
           // 主人收到访客的 offer，创建 answer
           setRemotePeerId(message.fromId);
+          remotePeerIdRef.current = message.fromId;
           const answer = await webrtc.createAnswer(message.sdp);
           ws.send({ type: 'answer', sdp: answer, targetId: message.fromId });
           break;
@@ -102,32 +112,22 @@ export default function P2PRoom() {
           break;
       }
     },
-    [webrtc]
+    [webrtc, ws]
   );
 
-  // WebSocket hook
-  const ws = useWebSocket({
-    onMessage: handleServerMessage,
-    onClose: () => {
-      if (roomState !== 'idle') {
-        setError('连接已断开');
-        setRoomState('idle');
-      }
-    },
-  });
+  // 设置消息处理器
+  useEffect(() => {
+    ws.setMessageHandler(handleServerMessage);
+  }, [ws, handleServerMessage]);
 
   // 创建房间
   const handleCreateRoom = () => {
     setError('');
     setRoomState('creating');
-    ws.connect();
-    // 等待连接成功后发送创建房间请求
-    const checkAndSend = setInterval(() => {
-      if (ws.status === 'connected') {
-        ws.send({ type: 'create-room' });
-        clearInterval(checkAndSend);
-      }
-    }, 100);
+    ws.connect(() => {
+      // 连接成功后发送创建房间请求
+      ws.send({ type: 'create-room' });
+    });
   };
 
   // 加入房间
@@ -135,13 +135,10 @@ export default function P2PRoom() {
     if (!joinCode.trim()) return;
     setError('');
     setRoomState('joining');
-    ws.connect();
-    const checkAndSend = setInterval(() => {
-      if (ws.status === 'connected') {
-        ws.send({ type: 'join-room', roomCode: joinCode.toUpperCase() });
-        clearInterval(checkAndSend);
-      }
-    }, 100);
+    ws.connect(() => {
+      // 连接成功后发送加入房间请求
+      ws.send({ type: 'join-room', roomCode: joinCode.toUpperCase() });
+    });
   };
 
   // 离开房间
@@ -152,6 +149,7 @@ export default function P2PRoom() {
     setRoomState('idle');
     setRoomCode('');
     setRemotePeerId('');
+    remotePeerIdRef.current = '';
     setError('');
   };
 
@@ -173,6 +171,7 @@ export default function P2PRoom() {
     if (urlRoomCode && roomState === 'idle') {
       handleJoinRoom();
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [urlRoomCode]);
 
   // 渲染状态指示器

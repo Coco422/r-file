@@ -7,7 +7,8 @@ build/
 
 # Database
 data/*.db
-data/*.db-journal
+*.db-shm
+*.db-wal
 
 # Environment
 .env

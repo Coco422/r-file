@@ -19,9 +19,9 @@ const server = createServer(app);
 setupWebSocket(server);
 
 // 启动服务器
-server.listen(config.port, () => {
-  console.log(`[Server] Running on http://localhost:${config.port}`);
-  console.log(`[Server] WebSocket on ws://localhost:${config.port}/ws`);
+server.listen(config.port, '0.0.0.0', () => {
+  console.log(`[Server] Running on http://0.0.0.0:${config.port}`);
+  console.log(`[Server] WebSocket on ws://0.0.0.0:${config.port}/ws`);
   console.log(`[Server] Client URL: ${config.clientUrl}`);
 });
 
