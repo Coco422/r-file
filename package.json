@@ -1,0 +1,26 @@
+{
+  "name": "r-file",
+  "version": "1.0.0",
+  "private": true,
+  "description": "文件中转站 - 文本分享与 P2P 文件传输",
+  "scripts": {
+    "dev": "pnpm -r --parallel run dev",
+    "dev:server": "pnpm --filter @r-file/server dev",
+    "dev:client": "pnpm --filter @r-file/client dev",
+    "build": "pnpm -r run build",
+    "build:shared": "pnpm --filter @r-file/shared build",
+    "build:server": "pnpm --filter @r-file/server build",
+    "build:client": "pnpm --filter @r-file/client build",
+    "start": "pnpm --filter @r-file/server start",
+    "lint": "pnpm -r run lint"
+  },
+  "keywords": ["file-sharing", "p2p", "webrtc", "pastebin"],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["better-sqlite3", "esbuild"]
+  }
+}
