@@ -1,5 +1,4 @@
 import { WebSocket } from 'ws';
-import { v4 as uuidv4 } from 'crypto';
 import { roomManager } from './room-manager.js';
 import type {
   ClientMessage,
@@ -10,6 +9,41 @@ import type {
 // 生成简单的 peer ID
 function generatePeerId(): string {
   return Math.random().toString(36).substring(2, 15);
+}
+
+// 加入失败追踪（防暴力枚举）
+const joinFailures = new Map<string, { count: number; blockedUntil: number }>();
+const MAX_JOIN_FAILURES = 5;           // 最大失败次数
+const BLOCK_DURATION_MS = 5 * 60 * 1000;  // 封禁 5 分钟
+const FAILURE_WINDOW_MS = 60 * 1000;   // 1 分钟内计数
+
+function checkJoinBlocked(peerId: string): boolean {
+  const record = joinFailures.get(peerId);
+  if (!record) return false;
+
+  if (Date.now() < record.blockedUntil) {
+    return true;
+  }
+
+  // 封禁已过期，清除记录
+  joinFailures.delete(peerId);
+  return false;
+}
+
+function recordJoinFailure(peerId: string): void {
+  const now = Date.now();
+  const record = joinFailures.get(peerId);
+
+  if (!record || now > record.blockedUntil + FAILURE_WINDOW_MS) {
+    joinFailures.set(peerId, { count: 1, blockedUntil: 0 });
+    return;
+  }
+
+  record.count++;
+  if (record.count >= MAX_JOIN_FAILURES) {
+    record.blockedUntil = now + BLOCK_DURATION_MS;
+    console.log(`[Signaling] Peer ${peerId} 被封禁 5 分钟（连续加入失败）`);
+  }
 }
 
 // 发送消息
@@ -82,6 +116,12 @@ function handleCreateRoom(ws: WebSocket, peerId: string) {
 }
 
 function handleJoinRoom(ws: WebSocket, peerId: string, roomCode: string) {
+  // 检查是否被封禁
+  if (checkJoinBlocked(peerId)) {
+    sendError(ws, 'BLOCKED', '操作过于频繁，请稍后再试');
+    return;
+  }
+
   try {
     const room = roomManager.joinRoom(roomCode, peerId, ws);
 
@@ -101,6 +141,10 @@ function handleJoinRoom(ws: WebSocket, peerId: string, roomCode: string) {
 
     console.log(`[Signaling] Peer ${peerId} joined room ${roomCode}`);
   } catch (error: any) {
+    // 记录失败
+    if (error.code === 'ROOM_NOT_FOUND') {
+      recordJoinFailure(peerId);
+    }
     sendError(ws, error.code || 'JOIN_FAILED', error.message || '加入房间失败');
   }
 }
